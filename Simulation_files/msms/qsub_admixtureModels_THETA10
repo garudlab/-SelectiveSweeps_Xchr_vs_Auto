@@ -1,0 +1,58 @@
+#### submit_Admixture job####
+#!/bin/bash                         #-- what is the language of this shell
+
+#$ -cwd
+# error = Merged with joblog
+#$ -o joblog.$JOB_ID.$TASK_ID
+#$ -j y
+## Edit the line below as needed:
+#$ -l h_rt=100:00:00,h_data=3G,highp
+## Modify the parallel environment
+## and the number of cores as needed:
+#$ -pe shared 2
+# Notify when
+#$ -m ea
+#  Job array indexes
+#$ -t 1-10:1
+
+# echo job info on joblog:
+echo "Job $JOB_ID started on:   " `hostname -s`
+echo "Job $JOB_ID started on:   " `date `
+echo " "
+
+# load the job environment:
+#. /u/local/Modules/default/init/modules.sh
+## Edit the line below as needed:
+#module load gcc/4.9.3
+
+# reset the mem to 1G
+#readarray is < ~/Jensen_response/tmp_intermediate_files/indexes.txt
+
+
+is=(null ${is[@]}) # this pads the file with an extra line in the beginning. 
+i=${is[$SGE_TASK_ID]}
+echo $i
+
+rho_in=5e-9  
+adaptive_theta=10
+selection=True    
+locusLength=100000
+
+for NAm in 1110000 15984500; do #1110000 15984500
+for EUr in 700000; do
+
+	file=tmp_intermediate_files/admixture_fixedPopSize_NAm${NAm}_EUr${EUr}_tmp_${SGE_TASK_ID}_theta${adaptive_theta}_${selection}_SNPs_MS.txt
+	echo ${file}
+
+	bash run_admixture.sh ${file}  $rho_in $adaptive_theta $selection $locusLength $NAm $EUr
+
+    done
+done
+
+
+# echo job info on joblog:
+echo "Job $JOB_ID ended on:   " `hostname -s`
+echo "Job $JOB_ID ended on:   " `date `
+echo " "
+
+#### submit_Admixture job STOP ####
