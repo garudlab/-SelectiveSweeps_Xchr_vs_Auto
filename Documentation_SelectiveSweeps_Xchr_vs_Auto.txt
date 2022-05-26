@@ -1,0 +1,238 @@
+# ========================================================================
+                   Download and process D. melanogaster data 
+# ========================================================================
+
+# Download the consensus sequence data files for the Raleigh (RAL) and Zambia (ZI) 
+# D. melanogaster populations from the Drosophila Genome Nexus (DGN) at www.johnpool.net 
+
+#extract files
+
+tar xjf dgrp_sequences.tar.bz2
+tar xvf dpgp3_sequences.tar.bz2
+
+#RAL data
+tar -xf dgrp_Chr2L.tar
+tar -xf dgrp_Chr2R.tar
+tar -xf dgrp_Chr3L.tar
+tar -xf dgrp_Chr3R.tar
+tar -xf dgrp_ChrX.tar
+
+#ZI data
+tar -xf dpgp3_Chr2L.tar
+tar -xf dpgp3_Chr2R.tar
+tar -xf dpgp3_Chr3L.tar
+tar -xf dpgp3_Chr3R.tar
+tar -xf dpgp3_ChrX.tar
+
+#remove strains with high IBD
+
+rm  RAL-385_* RAL-358_* RAL-712_* RAL-399_* RAL-879_* RAL-355_* RAL-810_* RAL-350_* RAL-832_* RAL-882_* RAL-306_* RAL-799_* RAL-801_* RAL-859_* RAL-907_* RAL-790_* RAL-748_* RAL-336_* RAL-850_* RAL-365_* RAL-786_* RAL-730_* RAL-861_* RAL-59_* RAL-646_* RAL-812_* RAL-787_* 
+
+rm ZI397N_* ZI530_* ZI269_* ZI240_* ZI218_* ZI207_* ZI523_* ZI86_*
+
+### obtain the number of N’s per sample per chromosome
+
+### make sure to run the commands in the corresponding RAL or ZI directory as needed
+
+for x in X 2R 2L 3R 3L; do
+  # go over every seq file and cound number of N's
+  for file in *Chr${x}.seq; do
+      N=$(grep -o 'N' $file |wc -l)
+      echo $file | cut -d "/" -f2 | sed '1s/$/\t'$N'/' >>   Ncount_Chr${x}.txt #file with number of N's per strain
+  done
+done
+
+### order the files with the missing data counts and select the 100 strains with least number of N’s.
+
+for x in X 2R 2L 3R 3L; do
+  sort -n -k 2 Ncount_Chr${x}.txt | head -100 | awk '{print $1}' > Lowest_MissingData.txt
+  for file in *Chr${x}.seq; do
+      comm -2 -3 <(ls *Chr${x}.seq ) <(sort Lowest_MissingData.txt) | xargs rm
+  done
+done
+
+### merge them into a single file in which rows correspond to sites and columns to samples.
+
+for file in *.seq;do
+    #transpose files
+    fold -w 1 ${file} > "$file.transp"
+done
+
+for x in X 2R 2L 3R 3L; do
+  #merge all strains into one file
+  paste *Chr${x}.seq.transp -d ","  > T_Chr${x}_100.txt
+done
+
+# remove invariant sites
+module load anaconda3 # load environment 
+
+for x in X 2R 2L 3R 3L; do   # do this in RAL directory
+  N=$(wc -l T_Chr${x}_100.txt)
+  python removeInvariantSites.py -i T_Chr${x}_100.txt -o RA_VariantSites_Chr${x}_100.txt -N $N
+done
+
+for x in X 2R 2L 3R 3L; do # do this in ZI directory
+  N=$(wc -l T_Chr${x}_100.txt)
+  python removeInvariantSites.py -i T_Chr${x}_100.txt -o ZI_VariantSites_Chr${x}_100.txt -N $N
+done
+
+#remove sites with more than 50 % mossing data
+
+module load anaconda3
+
+for x in X 2R 2L 3R 3L; do # do this in RAL directory
+  #file with number of N's per position
+  sed 's/[^N]//g' RA_VariantSites_Chr${x}_100.txt | awk '{ print length }' > missingDat_perSite.txt
+  
+  #obtain lines to be removed
+  python SitestoRemove.py
+  
+  #delete corresponding lines from variant sites file
+  sed -e 's/$/d/' toRemove.txt >lines_to_delete.sed
+  sed -f lines_to_delete.sed RA_VariantSites_Chr${x}_100.txt  > Variants_Chr${x}_RA_100.txt
+
+done 
+
+for x in X 2R 2L 3R 3L; do # do this in ZI directory
+  #file with number of N's per position
+  sed 's/[^N]//g' ZI_VariantSites_Chr${x}_100.txt | awk '{ print length }' > missingDat_perSite.txt
+  
+  #obtain lines to be removed
+  python SitestoRemove.py
+  
+  #delete corresponding lines from variant sites file
+  sed -e 's/$/d/' toRemove.txt >lines_to_delete.sed
+  sed -f lines_to_delete.sed ZI_VariantSites_Chr${x}_100.txt  > Variants_Chr${x}_ZI_100.txt
+
+done
+
+
+
+# ========================================================================
+                         Diversity Statistics 
+# ========================================================================
+
+
+#first remove regions with recombination rate <5e-7cM/bp
+
+module load anaconda3
+
+for popu in RA ZI; do
+  for x in X 2R 2L 3R 3L; do
+    python RemoveLowRecomb.py -i Variants_Chr${x}_${popu}_100.txt -r LowRecFiles/LowRecIntervalsChr${x}.txt -o LowRecFiles/VariantSites_Chr${x}_${popu}_100_NoLowRecomb.txt
+  done
+done
+
+
+###S and Pi in 10 kb windows
+
+for x in X 2R 2L 3R 3L; do
+  python popgen_stats_data.py 100 -i LowRecFiles/VariantSites_Chr${x}_RA_100_NoLowRecomb.txt -o outPi/DGRP_Diversity_Chr${x}_100_NoLowRecomb.txt -w 10
+done
+
+for x in X 2R 2L 3R 3L; do
+  python popgen_stats_data.py 100 -i LowRecFiles/VariantSites_Chr${x}_ZI_100_NoLowRecomb.txt -o outPi/DPGP3_Diversity_Chr${x}_100_NoLowRecomb.txt -w 10
+done
+
+
+### LD
+#obtain LD using the R2 statistic in sliding windows of10 kb iterated by 50 bps
+
+for x in 2R 2L 3R 3L X; do
+     python popgen_stats.py 100 -i  ParsedFiles/VariantSites_Chr${x}_RA_100_NoLowRecomb.txt -o RA_LD_Chr${x}_100.txt
+done
+
+for x in 2R 2L 3R 3L X; do
+     python popgen_stats.py 100 -i  ParsedFiles/VariantSites_Chr${x}_ZI_100_NoLowRecomb.txt -o ZI_LD_Chr${x}_100.txt
+done
+
+# order by LD value and smooth LD plots by averaging LD values binned in non-overlapping 20 bp windows until a distance of 300 bps. After that, LD values average in bins of 150 bp non-overlapping windows.
+
+for popu in RA ZI; do
+	for x in 2R 2L 3R 3L X; do
+    	cat ${popu}_LD_Chr${x}_100.txt |  sort -k 2n  > sorted_${popu}_LD_Chr${x}_100.txt
+    	python averageLD.py sorted_${popu}_LD_Chr${x}_100.txt  ${popu}_LD_Chr${x}_average_100.txt
+	done
+done
+
+
+# ========================================================================
+                            Run H12 
+# ========================================================================
+
+for x in 2R 2L 3R 3L X; 
+  for w in 265 401; do
+        python H12_H2H1_Py3_removeMDhaps.py Variants_Chr${x}_RA_100.txt 100  -o outH12/RA_Chr${x}_H12_${w}_removeMDhaps_j1.txt -w $w -j 1 -d 0
+  done
+done
+
+for x in 2R 2L 3R 3L X; 
+  for w in 401; do
+        python H12_H2H1_Py3_removeMDhaps_downsample.py Variants_Chr${x}_RA_100.txt 100 265 -o outH12/RA_Chr${x}_H12_${w}_removeMDhaps_downsample_265_j1.txt -w $w -j 1 -d 0
+  done
+done
+
+# ========================================================================
+                          SLiM simulations
+# ========================================================================
+  ##set output directory as outFiles/
+
+  # run selective sweeps varying theta for X and auto
+  qsub qsub_SweepsTHETA_Auto
+  qsub qsub_SweepsTHETA_X
+
+  # run selective sweeps for environmental shift a for X and auto
+  qsub_noDominanceShift_Auto
+  qsub_noDominanceShift_X
+
+  qsub_noDominanceShift_Auto
+  qsub_noDominanceShift_X
+
+  # run sexual antagonism
+  qsub qsub_SexualAntagonism_femaleDisadvantage_Auto
+  qsub qsub_SexualAntagonism_maleDisadvantage_Auto
+
+  qsub qsub_SexualAntagonism_femaleDisadvantage_X
+  qsub qsub_SexualAntagonism_maleDisadvantage_X
+
+
+# ========================================================================
+                          SLiM simulations for ABC
+# ========================================================================
+  
+  #run ABC simulations for constant Ne=2657111 rescaled by Q=50
+  #hard sweeps are simulated with THETA=0.01 and soft with THETA=10
+
+  qsub qsub_constantNe_THETA0.01_Auto
+  qsub qsub_constantNe_THETA10_Auto
+
+  qsub qsub_constantNe_THETA0.01_X
+  qsub qsub_constantNe_THETA10_X
+
+  #get Bayes Factors 
+  ./run_BF_Auto.sh
+  ./run_BF_Xchr.sh
+
+
+# ========================================================================
+                          msms simulations for ABC
+# ========================================================================
+
+  #outFiles directory and tmp_intermediate_files directory are needed for the output of the code
+  
+  qsub qsub_admixtureModels_THETA0.01 #hard sweeps
+  qsub qsub_admixtureModels_THETA10   #soft sweeps
+
+  # to run X chromosome simulations (Ne=3/4Ne_auto) change admixture_parameters_fixedPopSize_MS.py 
+  # to admixture_parameters_fixedPopSize_MS_ChrX.py in the run_admixture.sh file
+
+
+
+  #clean resulting files, make sure correct file names are given in the script removeNA.sh
+  ./removeNA.sh  
+
+  #get Bayes Factors make sure correct file names are given in the script removeNA.sh
+  ./run_BF.sh
+
+
+
