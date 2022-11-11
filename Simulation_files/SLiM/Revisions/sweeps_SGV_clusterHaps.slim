@@ -1,0 +1,182 @@
+initialize() {
+
+	if (exists("slimgui")) {
+		defineConstant("R", 5e-9); //1e-7
+		defineConstant("N", 1e6); //5e-4
+		defineConstant("Q", 300); //rescaling constant
+		defineConstant("sd", -1e-4);
+		defineConstant("sb", 1e-4);
+		defineConstant("run", 1);
+		defineConstant("ChrType",'X');
+		//defineConstant("THETA_A", 0.0);
+		defineConstant("PF_on", 0.001);
+		defineConstant("AgeSweep", 0.0);
+		defineConstant("burn_in", 0.5);
+		defineConstant("sexRatio", 0.5);
+		defineConstant("H", 0.5);
+		defineConstant("file_path_data","tmp/origins.txt");
+	
+	}
+	
+	initializeTreeSeq();
+	
+	//defineConstant("Mu_a", THETA_A/(4*(N/Q)));
+	defineConstant("chromosome_length", 1e4);
+	
+	
+	initializeMutationType("m1", H, "f", sd*Q);
+	initializeMutationType("m2", H, "f", 0);
+	m1.mutationStackPolicy = "f";// ??
+	initializeSex(ChrType);//models autosomes
+	
+	initializeGenomicElementType("g1", m2, 1);
+	
+	initializeGenomicElement(g1, 0, chromosome_length-1);
+	initializeMutationRate(0);
+	initializeRecombinationRate(R*Q);
+	
+	//initializeRecombinationRate(R*Q,sex="F");
+	//initializeRecombinationRate(0,sex="M");
+}
+
+function (void)Start(void){
+	
+	// save the state of the simulation
+	sim.outputFull("/tmp/slim_" + simID + ".txt");
+	
+	//add neutral or deleterious mutation
+	target = sample(p1.genomes.individual.genome1, 1);
+	target.addNewDrawnMutation(m1, asInteger(chromosome_length/2)-1); // add mutation m1 #asInteger(chromosome_length/2)-1
+
+}
+
+
+function (void)checkSweep_pre(void) {
+	if (sim.tag==0 & sim.generation > G_start){
+		counts = p1.genomes.individual.countOfMutationsOfType(m1);
+		freq = mean(counts > 0);
+		if (freq >= PF_on){
+			//save individuals with mutations
+			print("selection on");
+			sim.mutationsOfType(m1).setSelectionCoeff(sb*Q);
+			m1.dominanceCoeff=1-H;
+			sim.tag=1; //stop checking if neutral/del mutation is lost
+			sim.setValue("genStartTag",sim.generation+1); //save generation to run post analysis
+			
+			// save the state of the simulation
+			sim.outputFull("/tmp/slim_beneficial" + simID + ".txt");
+			
+			sim.deregisterScriptBlock(s1);
+		}
+		
+		if (freq == 0){
+			print("deleterious mutation lost");
+			line = asString(-1) +  "\t" + asString(sim.generation - G_start)+"\t" + "\t"+asString(freq)+"\t" +asString(ChrType)+ "\t" +asString(H) +"\t"+ asString(PF_on);
+			writeFile(file_path_data,line,append=T);
+			
+			// lost sweep go back
+			sim.readFromPopulationFile("/tmp/slim_" + simID + ".txt");
+			// start a newly seeded run
+			setSeed(rdunif(1, 0, asInteger(2^62) - 1));
+			target = sample(p1.genomes.individual.genome1, 1);
+			target.addNewDrawnMutation(m1, asInteger(chromosome_length/2)-1); // add mutation again
+		
+		}
+	}
+}
+
+function (void)checkSweep_post(void) {
+	
+	generationTag = sim.getValue("genStartTag");
+	if (sim.tag==1 & sim.generation >= generationTag){
+		
+		
+		counts = p1.genomes.individual.countOfMutationsOfType(m1); // get frequency of mutation
+		freq = mean(counts > 0);
+		if (freq ==1.0)
+		{
+			p_sample=p1.sampleIndividuals(100);
+			if (ChrType=="X"){
+				muts = p_sample.genome1.mutationsOfType(m1);
+				females= p_sample[which(p_sample.sex=="F")];
+				muts = c(muts,females.genome2.mutationsOfType(m1));
+			}
+			else{
+				muts=p_sample.genomes.mutationsOfType(m1);
+			}
+			muts = unique(muts).size();
+			
+			line = asString(muts) +  "\t" + asString(sim.generation - G_start)+"\t" + "\t"+asString(freq)+"\t" +asString(ChrType)+ "\t" +asString(H)+ "\t" +asString(PF_on);
+			writeFile(file_path_data,line,append=T);
+			sim.treeSeqOutput(file_path);
+			sim.simulationFinished();
+		}
+		
+		if (freq == 0){
+			//lost sweep, try again
+			line = asString(0) +  "\t" + asString(sim.generation - G_start)+"\t" + "\t"+asString(freq)+"\t" +asString(ChrType)+ "\t" +asString(H)+ "\t" +asString(PF_on);
+			writeFile(file_path_data,line,append=T);
+			
+			
+			// lost sweep go back to when PF_on is reached
+			print("beneficial mutation lost");
+			sim.readFromPopulationFile("/tmp/slim_beneficial" + simID + ".txt");
+			// start a newly seeded run
+			setSeed(rdunif(1, 0, asInteger(2^62) - 1));
+			sim.mutationsOfType(m1).setSelectionCoeff(sb*Q);
+			m1.dominanceCoeff=1-H;
+			sim.tag=1;
+			
+			sim.setValue("generationTag",sim.generation+1); //save generation to run post analysis
+		
+		}
+	}
+}
+
+function (void)AgeOfSweep(void) {
+	
+	if (sim.tag>0 & sim.generation==sim.tag+AgeSweep)
+	{
+		//output tree file
+		catn("End simulation");
+		print(sim.generation);
+		sim.treeSeqOutput(file_path);
+		sim.simulationFinished();
+	}
+}
+
+
+
+1 {
+	defineConstant("simID", run);
+	
+	sim.addSubpop("p1", asInteger(N/Q),sexRatio);
+	
+	m1.tag = asInteger(N/Q);
+	
+	defineConstant("parents_lst", rep(0,asInteger(N/Q)));
+	defineConstant("grandparents_lst", rep(0,asInteger(N/Q)));
+	
+	defineConstant("genStartTag", 0);
+	sim.setValue("genStartTag",0);
+	
+	
+	sim.tag=0;
+	catn("s= "+asString(sb*Q));
+	
+	//defineConstant("G_start", sim.generation + asInteger(burn_in*(N/Q)));
+	defineConstant("G_start", 10);
+	print(G_start);
+	
+	G_end = G_start+asInteger(N/Q)*50;
+	print(G_end);
+	
+	sim.registerLateEvent(NULL, "{Start();}", G_start, G_start);
+	sim.registerLateEvent(1, "{checkSweep_pre();}", G_start, G_end);
+	sim.registerLateEvent(NULL, "{checkSweep_post();}", G_start, G_end);
+	sim.registerLateEvent(NULL, "{sim.simulationFinished();}", G_end, G_end);
+
+
+
+}
+

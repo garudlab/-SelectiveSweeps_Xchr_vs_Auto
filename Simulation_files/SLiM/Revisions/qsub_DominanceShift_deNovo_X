@@ -1,0 +1,66 @@
+#### submit_Admixture job####
+
+#!/bin/bash                         #-- what is the language of this shell
+
+#$ -cwd
+# error = Merged with joblog
+#$ -o joblog.$JOB_ID.$TASK_ID
+#$ -j y
+## Edit the line below as needed:
+#$ -l h_rt=200:00:00,h_data=11G,highp
+## Modify the parallel environment
+## and the number of cores as needed:
+#$ -pe shared 1
+# Notify when
+#$ -m a
+#  Job array indexes
+#$ -t 1-50:1
+
+# echo job info on joblog:
+echo "Job $JOB_ID started on:   " `hostname -s`
+echo "Job $JOB_ID started on:   " `date `
+echo " "
+
+# load the job environment:
+# load the job environment:
+. /u/local/Modules/default/init/modules.sh
+module load anaconda3
+module load python/3.7.3
+
+#activate slim environment
+source /u/local/apps/anaconda3/2020.11/etc/profile.d/conda.sh
+conda activate slim
+
+
+
+is=(null ${is[@]}) # this pads the file with an extra line in the beginning. 
+i=${is[$SGE_TASK_ID]}
+echo $i
+
+
+rho_in=5e-9  
+#adaptive_theta=0.4
+Ne=1e6
+Q=50
+sd=-1e-4
+sb=1e-4
+ChrType=X
+burn_in=10
+
+for adaptive_theta in 0.4;do
+for H in  0.5 0.25 0.0 0.15 0.1; do 
+	
+	file=outFiles/OriginsData_DShiftDeNovo_${Ne}_Q${Q}_${ChrType}_sd${sd}_${SGE_TASK_ID}.txt
+	echo ${file}
+	bash run_DS.sh ${file} $rho_in $adaptive_theta $Ne $Q $sd $sb $ChrType $burn_in $H
+
+done
+done
+
+
+
+# echo job info on joblog:
+echo "Job $JOB_ID ended on:   " `hostname -s`
+echo "Job $JOB_ID ended on:   " `date `
+echo " "
+

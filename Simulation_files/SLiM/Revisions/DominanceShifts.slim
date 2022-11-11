@@ -1,0 +1,136 @@
+initialize() {
+	if (exists("slimgui")) {
+		defineConstant("R", 5e-9); //1e-7
+		defineConstant("N", 1e6); //5e-4
+		defineConstant("Q", 100); //rescaling constant
+		defineConstant("sd", -1e-4);
+		defineConstant("sb", 1e-4);
+		defineConstant("run", 1);
+		defineConstant("ChrType",'A');
+		defineConstant("THETA_A", 50.0);
+		defineConstant("PF", 1.0);
+		defineConstant("AgeSweep", 0.0);
+		defineConstant("burn_in", 0.5);
+		defineConstant("sexRatio", 0.5);
+		defineConstant("H", 0.5);
+	
+	}
+	
+		
+	defineConstant("Mu_a", THETA_A/(4*N));
+	defineConstant("chromosome_length", 1);
+	
+	
+	initializeMutationType("m1", H, "f", sd*Q);
+	m1.mutationStackPolicy = "f";// ??
+	initializeSex(ChrType);//models autosomes
+	
+	initializeGenomicElementType("g1", m1, 1);
+	
+	initializeGenomicElement(g1, 0, 0);
+	initializeMutationRate(Mu_a*Q);
+	initializeRecombinationRate(R*Q);
+	
+	//initializeRecombinationRate(R*Q,sex="F");
+	//initializeRecombinationRate(0,sex="M");
+}
+function (void)selecOn(void){
+	counts =  p1.genomes.individual.countOfMutationsOfType(m1);
+	freq = mean(counts > 0);
+	muts=size(sim.mutationsOfType(m1));
+	//check if mut exists if it does turn. on selec if not end simulation with corresponding frequency output 
+	if (freq>0){
+		print("selection on");
+		sim.mutationsOfType(m1).setSelectionCoeff(sb*Q);
+		m1.dominanceCoeff=1-H;
+		sim.tag=1;
+	}
+	if(freq==0){
+		line = asString(-1) +  "\t" + asString(sim.generation - G_start)+"\t" + "\t"+asString(freq)+"\t" +asString(ChrType)+ "\t" +asString(H)+ "\t" +asString(THETA_A);
+		writeFile(file_path_data,line,append=T);
+		catn(line);
+		sim.simulationFinished();
+	
+	}
+
+}
+function (void)checkSweep(void) {
+	counts = p1.genomes.individual.countOfMutationsOfType(m2);
+	freq = mean(counts > 0);
+	if (freq >=PF)
+	{
+		//output tree file
+		catn("reached PF");
+		sim.tag=sim.generation;
+		print(sim.tag);
+		sim.deregisterScriptBlock(s1);
+	}
+}
+
+function (void)checkSweep2(void) {
+	counts = p1.genomes.individual.countOfMutationsOfType(m1);
+	freq = mean(counts > 0);
+	if (freq ==1.0)
+	{
+		p_sample=p1.sampleIndividuals(100);
+		if (ChrType=="X"){
+			muts = p_sample.genome1.mutationsOfType(m1);
+			females= p_sample[which(p_sample.sex=="F")];
+			muts = c(muts,females.genome2.mutationsOfType(m1));
+		}
+		else{
+			muts=p_sample.genomes.mutationsOfType(m1);
+		}
+		muts = unique(muts).size();
+
+		line = asString(muts) +  "\t" + asString(sim.generation)+"\t" + "\t"+asString(freq)+"\t" +asString(ChrType)+ "\t" +asString(H)+ "\t" +asString(THETA_A);
+		writeFile(file_path_data,line,append=T);
+		catn(line);
+		sim.simulationFinished();
+	}
+	if (freq == 0){
+	 line = asString(0) +  "\t" + asString(sim.generation)+"\t" + "\t"+asString(freq)+"\t" +asString(ChrType)+ "\t" +asString(H)+ "\t" +asString(THETA_A);
+	 writeFile(file_path_data,line,append=T);
+	 catn(line);
+	 sim.simulationFinished();
+	}
+}
+
+
+function (void)AgeOfSweep(void) {
+	if (sim.tag>0 & sim.generation==sim.tag+AgeSweep)
+	{
+		//output tree file
+		catn("End simulation");
+		print(sim.generation);
+		sim.treeSeqOutput(file_path);
+		sim.simulationFinished();
+	}
+}
+
+mutation(m1) {
+	return ifelse(sim.tag==1,  F, T);}
+
+1 {
+	
+	sim.addSubpop("p1", asInteger(N/Q),sexRatio);
+	
+	sim.tag=0;
+	
+	catn("mutation rate= "+asString(Mu_a*Q));
+	catn("s= "+asString(sb*Q));
+	
+	defineConstant("G_start", sim.generation + asInteger(burn_in*0.75*(N/Q)));
+	print(G_start);
+	
+		G_end = G_start+asInteger(N/Q)*100;
+	print(G_end);
+	
+	sim.registerLateEvent(NULL, "{selecOn();}", G_start, G_start);
+	sim.registerLateEvent(NULL, "{checkSweep2();}", G_start+2, G_end);
+	sim.registerLateEvent(NULL, "{EndSimulation();}", G_end, G_end);
+	
+	
+
+}
+
