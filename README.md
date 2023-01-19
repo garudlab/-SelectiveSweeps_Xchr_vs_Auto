@@ -1,6 +1,4 @@
 # SelectiveSweeps_Xchr_vs_Auto
 Associated code for manuscript 
 
-Harrris and Garud 2022. Contrasting the tempo and mode of adaptation on the X and autosomes in Drosophila melanogaster. BioRxiv. 
-
-Available at https://www.biorxiv.org/content/10.1101/2022.05.26.493648v1
+Harris M and Garud NR. "Enrichment of Hard Sweeps on the X Chromosome in Drosophila melanogaster", Molecular Biology and Evolution, Volume 40, Issue 1, January 2023, msac268, https://doi.org/10.1093/molbev/msac268
